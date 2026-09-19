@@ -4,6 +4,8 @@ services:
     container_name: subsync-daemon
     restart: unless-stopped
     network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+      - JELLYFIN_API_KEY=26b928a1403a4d4783ac188b7c14e0a3
     volumes:
-      # Map 1:1 so host paths sent by Jellyfin match container paths
       - /mnt/gdrive/Media:/mnt/gdrive/Media
