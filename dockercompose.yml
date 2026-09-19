@@ -1,0 +1,9 @@
+services:
+  subsync:
+    build: .
+    container_name: subsync-daemon
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      # Map 1:1 so host paths sent by Jellyfin match container paths
+      - /mnt/gdrive/Media:/mnt/gdrive/Media
