@@ -1,5 +1,6 @@
 import os
 import glob
+import shutil
 import subprocess
 import json
 import urllib.request
@@ -14,9 +15,8 @@ def get_path_from_jellyfin(item_id: str) -> str:
     if not API_KEY:
         print("[API ERROR] No JELLYFIN_API_KEY set in environment.", flush=True)
         return ""
-        
+
     try:
-        # Query the item directly
         url = f"{JELLYFIN_URL}/Items?Ids={item_id}&Fields=Path"
         req = urllib.request.Request(url, headers={
             "X-Emby-Token": API_KEY,
@@ -52,33 +52,53 @@ def sync_subtitles_for_video(video_path: str):
             print(f"[SKIP] Already synced: {srt}", flush=True)
             continue
 
-        temp_synced = f"{srt}.tmp"
+        local_input = "/tmp/input_sub.srt"
+        local_output = "/tmp/synced_sub.srt"
+
+        # Clean previous local runs
+        for path in (local_input, local_output):
+            if os.path.exists(path):
+                os.remove(path)
+
+        # Copy remote srt using raw bytes to bypass FUSE xattr issues
+        shutil.copyfile(srt, local_input)
+
         print(f"[RUNNING] ffsubsync on: {srt}", flush=True)
 
         cmd = [
             "ffsubsync",
             video_path,
-            "-i", srt,
-            "-o", temp_synced
+            "-i", local_input,
+            "-o", local_output
         ]
 
+        # Execute ffsubsync and capture all output
         res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode == 0:
-            os.replace(temp_synced, srt)
+
+        print(f"[FFSUBSYNC STDOUT]\n{res.stdout.strip()}", flush=True)
+        if res.stderr.strip():
+            print(f"[FFSUBSYNC STDERR]\n{res.stderr.strip()}", flush=True)
+
+        # Verify output file was created and is non-empty
+        if os.path.exists(local_output) and os.path.getsize(local_output) > 0:
+            # Copy back to rclone without metadata attributes
+            shutil.copyfile(local_output, srt)
             with open(marker, "w") as f:
                 f.write("")
             print(f"[SUCCESS] Retimed and marked: {marker}", flush=True)
         else:
-            if os.path.exists(temp_synced):
-                os.remove(temp_synced)
-            print(f"[ERROR] Sync failed for {srt}:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}", flush=True)
+            print(f"[ERROR] Sync did not produce a valid output for {srt} (return code: {res.returncode})", flush=True)
+
+        # Clean up local scratch files
+        for path in (local_input, local_output):
+            if os.path.exists(path):
+                os.remove(path)
 
 @app.post("/webhook")
 async def jellyfin_webhook(request: Request, background_tasks: BackgroundTasks):
     try:
         body = await request.body()
         raw_text = body.decode("utf-8")
-        print(f"[RAW INCOMING] {raw_text}", flush=True)
         data = json.loads(raw_text) if raw_text.strip() else {}
     except Exception as e:
         print(f"[PARSE ERROR] {e}", flush=True)
