@@ -6,6 +6,6 @@ services:
     network_mode: host
     environment:
       - PYTHONUNBUFFERED=1
-      - JELLYFIN_API_KEY=26b928a1403a4d4783ac188b7c14e0a3
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
     volumes:
       - /mnt/gdrive/Media:/mnt/gdrive/Media

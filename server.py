@@ -4,12 +4,27 @@ import shutil
 import subprocess
 import json
 import urllib.request
+import uuid
 from fastapi import FastAPI, BackgroundTasks, Request
 
 app = FastAPI()
 
 JELLYFIN_URL = "http://127.0.0.1:8096"
 API_KEY = os.getenv("JELLYFIN_API_KEY", "")
+
+EXCLUDED_PATHS = [
+    "/mnt/gdrive/Media/Family Register/Season 1",
+    # Add any other folders or specific files here
+]
+
+def is_path_excluded(file_path: str) -> bool:
+    norm_path = os.path.abspath(file_path)
+    for excluded in EXCLUDED_PATHS:
+        norm_excluded = os.path.abspath(excluded)
+        if norm_path == norm_excluded or norm_path.startswith(norm_excluded + os.sep):
+            return True
+    return False
+
 
 def get_path_from_jellyfin(item_id: str) -> str:
     if not API_KEY:
@@ -32,7 +47,78 @@ def get_path_from_jellyfin(item_id: str) -> str:
     return ""
 
 def sync_subtitles_for_video(video_path: str):
+    if is_path_excluded(video_path):
+        print(f"[SKIP] Path is in exclusion list: {video_path}", flush=True)
+        return
+
     print(f"[TASK START] Processing video: {video_path}", flush=True)
+
+    if not os.path.exists(video_path):
+        print(f"[WARN] File path does not exist on disk: {video_path}", flush=True)
+        return
+
+    base_name = os.path.splitext(video_path)[0]
+    srt_candidates = glob.glob(f"{glob.escape(base_name)}*.srt")
+    srt_candidates = [s for s in srt_candidates if not s.endswith(".tmp")]
+
+    if not srt_candidates:
+        print(f"[INFO] No .srt files found for: {base_name}", flush=True)
+        return
+
+    for srt in srt_candidates:
+        marker = f"{srt}.synced"
+        if os.path.exists(marker):
+            print(f"[SKIP] Already synced: {srt}", flush=True)
+            continue
+
+        # Use a unique UUID for each run to avoid race conditions
+        unique_id = uuid.uuid4().hex[:8]
+        local_input = f"/tmp/input_{unique_id}.srt"
+        local_output = f"/tmp/synced_{unique_id}.srt"
+
+        try:
+            # Raw byte copy to container scratch
+            shutil.copyfile(srt, local_input)
+
+            print(f"[RUNNING] ffsubsync on: {srt} (ID: {unique_id})", flush=True)
+
+            cmd = [
+                "ffsubsync",
+                video_path,
+                "-i", local_input,
+                "-o", local_output,
+                "--parallel-workers", "6"
+            ]
+
+            res = subprocess.run(cmd, capture_output=True, text=True)
+
+            if res.stdout.strip():
+                print(f"[FFSUBSYNC STDOUT]\n{res.stdout.strip()}", flush=True)
+            if res.stderr.strip():
+                print(f"[FFSUBSYNC STDERR]\n{res.stderr.strip()}", flush=True)
+
+            if os.path.exists(local_output) and os.path.getsize(local_output) > 0:
+                shutil.copyfile(local_output, srt)
+                with open(marker, "w") as f:
+                    f.write("")
+                print(f"[SUCCESS] Retimed and marked: {marker}", flush=True)
+            else:
+                print(f"[ERROR] Sync did not produce a valid output for {srt} (return code: {res.returncode})", flush=True)
+
+        finally:
+            # Clean up only this process's specific scratch files
+            for p in (local_input, local_output):
+                if os.path.exists(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+    
+    print(f"[TASK START] Processing video: {video_path}", flush=True)
+
+    if is_path_excluded(video_path):
+        print(f"[SKIP] Path is in exclusion list: {video_path}", flush=True)
+        return
 
     if not os.path.exists(video_path):
         print(f"[WARN] File path does not exist on disk: {video_path}", flush=True)
@@ -69,7 +155,8 @@ def sync_subtitles_for_video(video_path: str):
             "ffsubsync",
             video_path,
             "-i", local_input,
-            "-o", local_output
+            "-o", local_output,
+            "--parallel-workers", "6"
         ]
 
         # Execute ffsubsync and capture all output
