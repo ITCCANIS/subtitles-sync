@@ -7,5 +7,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+    devices:
+      - /dev/fuse:/dev/fuse
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - apparmor:unconfined
     volumes:
-      - /mnt/gdrive/Media:/mnt/gdrive/Media
+      - type: bind
+        source: /mnt/gdrive
+        target: /mnt/gdrive
+        bind:
+          propagation: rslave
