@@ -7,6 +7,18 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://127.0.0.1:8096}
+      # "|" separated list of folders to never touch.
+      - EXCLUDED_PATHS=${EXCLUDED_PATHS:-/mnt/gdrive/Media/Family Register/Season 1|/mnt/gdrive/Media/Person of Interest|/mnt/gdrive/Media/Silo}
+      # Lower = splits more eagerly (more breaks detected). Empty = single offset.
+      - SPLIT_PENALTY=${SPLIT_PENALTY:-7}
+      - MAX_OFFSET_SECONDS=${MAX_OFFSET_SECONDS:-300}
+      - USE_EMBEDDED_SUBS=${USE_EMBEDDED_SUBS:-true}
+      - PARALLEL_WORKERS=${PARALLEL_WORKERS:-6}
+      - FFSUBSYNC_EXTRA_ARGS=${FFSUBSYNC_EXTRA_ARGS:-}
+      # keep = rename original to *.orig (hidden from Jellyfin), delete = old behaviour.
+      - ORIGINALS=${ORIGINALS:-keep}
+      - REFRESH_JELLYFIN=${REFRESH_JELLYFIN:-true}
     devices:
       - /dev/fuse:/dev/fuse
     cap_add:

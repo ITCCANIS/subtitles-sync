@@ -1,0 +1,4 @@
+# 0.5.x adds --split-penalty (needed for TV versions with ad/act breaks).
+ffsubsync==0.5.1
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
