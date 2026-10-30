@@ -266,7 +266,11 @@ def _jellyfin_request(cfg: Config, path: str, method: str = "GET"):
     req = urllib.request.Request(
         f"{cfg.jellyfin_url}{path}",
         method=method,
-        headers={"X-Emby-Token": cfg.api_key, "Accept": "application/json"},
+        # Newer Jellyfin versions reject the legacy X-Emby-Token header.
+        headers={
+            "Authorization": f'MediaBrowser Token="{cfg.api_key}"',
+            "Accept": "application/json",
+        },
         data=b"" if method == "POST" else None,
     )
     with urllib.request.urlopen(req, timeout=10) as resp:
