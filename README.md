@@ -29,7 +29,8 @@ All settings are environment variables; see `docker-compose.yml`.
 | Variable | Default | Meaning |
 |---|---|---|
 | `SPLIT_PENALTY` | `7` | Lower = detects more breaks. Empty = single offset (old behaviour). |
-| `MAX_OFFSET_SECONDS` | `300` | Largest shift allowed. |
+| `MAX_OFFSET_SECONDS` | `60` | Largest shift allowed. Big values make split mode match lines to unrelated speech. |
+| `MAX_SPLIT_SPREAD_SECONDS` | `30` | Split results whose offsets differ more than this, or that put lines out of order, are rejected and redone with a single offset. |
 | `USE_EMBEDDED_SUBS` | `true` | Use a text subtitle track inside the video as reference. |
 | `FFSUBSYNC_EXTRA_ARGS` | | Extra ffsubsync flags, e.g. `--vad silero`. |
 | `ORIGINALS` | `keep` | `keep` = rename to `.orig`, `delete` = remove. |

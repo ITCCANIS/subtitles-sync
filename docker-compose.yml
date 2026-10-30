@@ -12,7 +12,10 @@ services:
       - EXCLUDED_PATHS=${EXCLUDED_PATHS:-/mnt/gdrive/Media/Family Register/Season 1|/mnt/gdrive/Media/Person of Interest|/mnt/gdrive/Media/Silo}
       # Lower = splits more eagerly (more breaks detected). Empty = single offset.
       - SPLIT_PENALTY=${SPLIT_PENALTY:-7}
-      - MAX_OFFSET_SECONDS=${MAX_OFFSET_SECONDS:-300}
+      - MAX_OFFSET_SECONDS=${MAX_OFFSET_SECONDS:-60}
+      # Split results whose offsets differ more than this are rejected
+      # and the subtitle is re-synced with a single offset instead.
+      - MAX_SPLIT_SPREAD_SECONDS=${MAX_SPLIT_SPREAD_SECONDS:-30}
       - USE_EMBEDDED_SUBS=${USE_EMBEDDED_SUBS:-true}
       - PARALLEL_WORKERS=${PARALLEL_WORKERS:-6}
       - FFSUBSYNC_EXTRA_ARGS=${FFSUBSYNC_EXTRA_ARGS:-}

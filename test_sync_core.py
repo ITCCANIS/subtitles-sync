@@ -89,6 +89,42 @@ class CommandTest(unittest.TestCase):
         self.assertIsNone(sc.pick_text_subtitle_stream(streams[:2]))
 
 
+def srt(starts):
+    blocks = []
+    for i, s in enumerate(starts, 1):
+        def ts(t):
+            ms = int(round(t * 1000))
+            return f"{ms // 3600000:02}:{ms // 60000 % 60:02}:{ms // 1000 % 60:02},{ms % 1000:03}"
+        blocks.append(f"{i}\n{ts(s)} --> {ts(s + 1.5)}\nline {i}\n")
+    return "\n".join(blocks)
+
+
+class SanityCheckTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        self.cfg = sc.Config(max_split_spread=30.0)
+        self.inp = touch(self.d, "in.srt", srt([10, 20, 30, 40, 50, 60]))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def check(self, out_starts):
+        out = touch(self.d, "out.srt", srt(out_starts))
+        return sc.check_sync_result(self.inp, out, self.cfg)
+
+    def test_accepts_tv_style_breaks(self):
+        # +2s for the first act, then +4.5s after an act break.
+        self.assertEqual(self.check([12, 22, 32, 44.5, 54.5, 64.5]), "")
+
+    def test_rejects_huge_spread(self):
+        # The kind of result seen on S02E02: blocks minutes apart.
+        self.assertIn("spread", self.check([10 - 229 + 300, 20 + 70, 30 + 89, 40, 50, 60]))
+
+    def test_rejects_lines_out_of_order(self):
+        self.assertIn("before the previous", self.check([10, 20, 30, 25, 35, 45]))
+
+
 class JobFlowTest(unittest.TestCase):
     """End-to-end job flow with ffmpeg/ffsubsync mocked out."""
 
@@ -152,6 +188,23 @@ class JobFlowTest(unittest.TestCase):
         with mock.patch.object(sc, "run_ffsubsync", self.fake_run(succeed_when_split=False)):
             self.assertEqual(sc.sync_subtitles_for_video(self.video, self.cfg), 1)
         self.assertEqual(self.calls, [True, False])
+
+    def test_scrambled_split_result_falls_back(self):
+        touch(self.d, "Ep.srt", srt([10, 20, 30, 40]))
+
+        def run(cmd, sub_out, timeout):
+            split = "--split-penalty" in cmd
+            self.calls.append(split)
+            starts = [200, 20, 300, 40] if split else [12, 22, 32, 42]
+            with open(sub_out, "w", encoding="utf-8") as f:
+                f.write(srt(starts))
+            return True
+
+        with mock.patch.object(sc, "run_ffsubsync", run):
+            self.assertEqual(sc.sync_subtitles_for_video(self.video, self.cfg), 1)
+        self.assertEqual(self.calls, [True, False])
+        out = sc.read_cue_starts(os.path.join(self.d, "Ep.synced.srt"))
+        self.assertEqual(out, [12, 22, 32, 42])
 
     def test_failure_leaves_original(self):
         touch(self.d, "Ep.srt")

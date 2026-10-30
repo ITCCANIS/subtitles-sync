@@ -6,6 +6,7 @@ Run directly for manual / batch use:
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,8 +41,10 @@ class Config:
     split_penalty: str = os.getenv("SPLIT_PENALTY", "7")
     # If the split run fails, try again with a single global offset.
     fallback_no_split: bool = _env_bool("FALLBACK_NO_SPLIT", True)
-    # TV recordings with ads left in can be off by minutes, not seconds.
-    max_offset_seconds: str = os.getenv("MAX_OFFSET_SECONDS", "300")
+    # Larger values let split mode match lines to random speech far away.
+    max_offset_seconds: str = os.getenv("MAX_OFFSET_SECONDS", "60")
+    # Reject split results whose offsets differ by more than this overall.
+    max_split_spread: float = float(os.getenv("MAX_SPLIT_SPREAD_SECONDS", "30"))
     # Prefer a text subtitle track inside the video as the timing reference.
     use_embedded_subs: bool = _env_bool("USE_EMBEDDED_SUBS", True)
     parallel_workers: str = os.getenv("PARALLEL_WORKERS", "6")
@@ -241,6 +244,52 @@ def build_ffsubsync_cmd(reference: str, sub_in: str, sub_out: str,
     return cmd + cfg.extra_args
 
 
+_SRT_TIME = re.compile(
+    r"(\d+):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d+):(\d{2}):(\d{2})[,.](\d{3})"
+)
+_ASS_TIME = re.compile(r"^Dialogue:\s*[^,]*,(\d+):(\d{2}):(\d{2})\.(\d{2}),", re.M)
+
+
+def read_cue_starts(path: str) -> list:
+    """Start times (seconds) of every cue, in file order."""
+    with open(path, "rb") as f:
+        text = f.read().decode("utf-8", errors="replace")
+    starts = [
+        int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+        for h, m, s, ms, *_ in _SRT_TIME.findall(text)
+    ]
+    if not starts:
+        starts = [
+            int(h) * 3600 + int(m) * 60 + int(s) + int(cs) / 100
+            for h, m, s, cs in _ASS_TIME.findall(text)
+        ]
+    return starts
+
+
+def check_sync_result(sub_in: str, sub_out: str, cfg: "Config") -> str:
+    """Return "" if the result looks sane, otherwise the reason it doesn't.
+
+    A TV -> Blu-ray difference moves the offset a few seconds per break, and
+    lines stay in order. A bad split result scatters blocks of lines minutes
+    apart and on top of each other, which is what these checks catch.
+    """
+    before, after = read_cue_starts(sub_in), read_cue_starts(sub_out)
+    if not before or len(before) != len(after):
+        return ""  # can't compare reliably; trust ffsubsync
+    offsets = [b - a for a, b in zip(before, after)]
+    spread = max(offsets) - min(offsets)
+    if spread > cfg.max_split_spread:
+        return f"offsets spread over {spread:.0f}s (limit {cfg.max_split_spread:.0f}s)"
+    # Lines that were in order must stay in order.
+    backwards = sum(
+        1 for i in range(1, len(after))
+        if before[i] >= before[i - 1] and after[i] < after[i - 1] - 1.0
+    )
+    if backwards:
+        return f"{backwards} line(s) moved before the previous line"
+    return ""
+
+
 def run_ffsubsync(cmd: list, sub_out: str, timeout: int) -> bool:
     log.info("Running: %s", " ".join(cmd))
     try:
@@ -413,6 +462,11 @@ def sync_subtitles_for_video(video_path: str, cfg: Config = None,
                     build_ffsubsync_cmd(reference, local_in, local_out, cfg, split=True),
                     local_out, cfg.timeout_seconds,
                 )
+                if ok and cfg.split_penalty:
+                    problem = check_sync_result(local_in, local_out, cfg)
+                    if problem:
+                        log.warning("Rejected split result: %s", problem)
+                        ok = False
                 if not ok and cfg.split_penalty and cfg.fallback_no_split:
                     log.info("Retrying without split mode")
                     ok = run_ffsubsync(
