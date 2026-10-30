@@ -17,6 +17,8 @@ services:
       # and the subtitle is re-synced with a single offset instead.
       - MAX_SPLIT_SPREAD_SECONDS=${MAX_SPLIT_SPREAD_SECONDS:-30}
       - USE_EMBEDDED_SUBS=${USE_EMBEDDED_SUBS:-true}
+      # 5.1/7.1 audio: detect speech on the center (dialogue) channel only.
+      - DIALOGUE_CHANNEL=${DIALOGUE_CHANNEL:-true}
       - PARALLEL_WORKERS=${PARALLEL_WORKERS:-6}
       - FFSUBSYNC_EXTRA_ARGS=${FFSUBSYNC_EXTRA_ARGS:-}
       # keep = rename original to *.orig (hidden from Jellyfin), delete = old behaviour.

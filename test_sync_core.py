@@ -99,6 +99,22 @@ def srt(starts):
     return "\n".join(blocks)
 
 
+class AudioTest(unittest.TestCase):
+    def test_center_channel_detection(self):
+        def a(**kw):
+            return [{"codec_type": "video"}, dict(codec_type="audio", **kw)]
+        self.assertTrue(sc.has_center_channel(a(channel_layout="5.1(side)", channels=6)))
+        self.assertTrue(sc.has_center_channel(a(channel_layout="7.1", channels=8)))
+        self.assertTrue(sc.has_center_channel(a(channels=6)))
+        self.assertFalse(sc.has_center_channel(a(channel_layout="stereo", channels=2)))
+        self.assertFalse(sc.has_center_channel([{"codec_type": "video"}]))
+
+    def test_extract_cmd(self):
+        cmd = sc.audio_extract_cmd("v.mkv", "o.wav", center_only=True)
+        self.assertIn("pan=mono|c0=FC", cmd)
+        self.assertNotIn("pan=mono|c0=FC", sc.audio_extract_cmd("v.mkv", "o.wav", False))
+
+
 class SanityCheckTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

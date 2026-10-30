@@ -47,6 +47,8 @@ class Config:
     max_split_spread: float = float(os.getenv("MAX_SPLIT_SPREAD_SECONDS", "30"))
     # Prefer a text subtitle track inside the video as the timing reference.
     use_embedded_subs: bool = _env_bool("USE_EMBEDDED_SUBS", True)
+    # For 5.1/7.1 audio, detect speech on the center (dialogue) channel only.
+    dialogue_channel: bool = _env_bool("DIALOGUE_CHANNEL", True)
     parallel_workers: str = os.getenv("PARALLEL_WORKERS", "6")
     # Anything else to pass to ffsubsync, e.g. "--vad silero --gss".
     extra_args: list = field(
@@ -197,8 +199,9 @@ def extract_reference(video_path: str, workdir: str, cfg: Config) -> str:
     precise than speech detection), otherwise a mono 16 kHz audio file.
     All subtitles of the video then sync against that local file.
     """
+    streams = probe_streams(video_path)
     if cfg.use_embedded_subs:
-        idx = pick_text_subtitle_stream(probe_streams(video_path))
+        idx = pick_text_subtitle_stream(streams)
         if idx is not None:
             ref = os.path.join(workdir, "reference.srt")
             cmd = [
@@ -214,18 +217,48 @@ def extract_reference(video_path: str, workdir: str, cfg: Config) -> str:
             log.warning("Embedded subtitle extraction failed, using audio")
 
     ref = os.path.join(workdir, "reference.wav")
-    cmd = [
-        "ffmpeg", "-nostdin", "-v", "error", "-y", "-i", video_path,
-        "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000",
-        "-c:a", "pcm_s16le", ref,
-    ]
-    res = subprocess.run(
-        cmd, capture_output=True, text=True, timeout=cfg.timeout_seconds
-    )
-    if res.returncode != 0 or not os.path.exists(ref) or os.path.getsize(ref) == 0:
-        raise RuntimeError(f"audio extraction failed: {res.stderr.strip()[-500:]}")
-    log.info("Reference: audio track (extracted locally)")
-    return ref
+    center = cfg.dialogue_channel and has_center_channel(streams)
+    attempts = [True, False] if center else [False]
+    res = None
+    for use_center in attempts:
+        res = subprocess.run(
+            audio_extract_cmd(video_path, ref, use_center),
+            capture_output=True, text=True, timeout=cfg.timeout_seconds,
+        )
+        if res.returncode == 0 and os.path.exists(ref) and os.path.getsize(ref) > 0:
+            log.info("Reference: audio track, %s (extracted locally)",
+                     "center/dialogue channel" if use_center else "full mix")
+            return ref
+        if use_center:
+            log.warning("Center channel extraction failed, using full mix")
+    raise RuntimeError(f"audio extraction failed: {res.stderr.strip()[-500:]}")
+
+
+def first_audio_stream(streams: list):
+    return next((s for s in streams if s.get("codec_type") == "audio"), None)
+
+
+def has_center_channel(streams: list) -> bool:
+    """True for 5.1/7.1-style audio, where dialogue sits in the center."""
+    audio = first_audio_stream(streams)
+    if not audio:
+        return False
+    layout = str(audio.get("channel_layout", "")).lower()
+    if layout:
+        return layout.startswith(("5.", "6.", "7.")) or "fc" in layout.split("(")[0]
+    return int(audio.get("channels", 0) or 0) >= 6
+
+
+def audio_extract_cmd(video_path: str, out: str, center_only: bool) -> list:
+    cmd = ["ffmpeg", "-nostdin", "-v", "error", "-y", "-i", video_path,
+           "-map", "0:a:0", "-vn"]
+    if center_only:
+        # Music and effects live in the other channels and make speech
+        # detection fire early; the center channel is mostly dialogue.
+        cmd += ["-af", "pan=mono|c0=FC"]
+    else:
+        cmd += ["-ac", "1"]
+    return cmd + ["-ar", "16000", "-c:a", "pcm_s16le", out]
 
 
 # ---------------------------------------------------------------------------

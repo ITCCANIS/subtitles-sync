@@ -32,6 +32,7 @@ All settings are environment variables; see `docker-compose.yml`.
 | `MAX_OFFSET_SECONDS` | `60` | Largest shift allowed. Big values make split mode match lines to unrelated speech. |
 | `MAX_SPLIT_SPREAD_SECONDS` | `30` | Split results whose offsets differ more than this, or that put lines out of order, are rejected and redone with a single offset. |
 | `USE_EMBEDDED_SUBS` | `true` | Use a text subtitle track inside the video as reference. |
+| `DIALOGUE_CHANNEL` | `true` | For 5.1/7.1 audio, detect speech on the center channel only (less music/effects noise, tighter timing). |
 | `FFSUBSYNC_EXTRA_ARGS` | | Extra ffsubsync flags, e.g. `--vad silero`. |
 | `ORIGINALS` | `keep` | `keep` = rename to `.orig`, `delete` = remove. |
 | `REFRESH_JELLYFIN` | `true` | Refresh the item after writing. |
