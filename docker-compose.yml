@@ -9,7 +9,7 @@ services:
       - JELLYFIN_API_KEY=${JELLYFIN_API_KEY}
       - JELLYFIN_URL=${JELLYFIN_URL:-http://127.0.0.1:8096}
       # "|" separated list of folders to never touch.
-      - EXCLUDED_PATHS=${EXCLUDED_PATHS:-/mnt/gdrive/Media/Family Register/Season 1|/mnt/gdrive/Media/Person of Interest|/mnt/gdrive/Media/Silo}
+      - EXCLUDED_PATHS=${EXCLUDED_PATHS:-/mnt/gdrive/Media/Family Register/Season 1|/mnt/gdrive/Media/Person of Interest|/mnt/gdrive/Media/Silo|/mnt/gdrive/Media/The Remarried Empress/Season 1}
       # Lower = splits more eagerly (more breaks detected). Empty = single offset.
       - SPLIT_PENALTY=${SPLIT_PENALTY:-7}
       - MAX_OFFSET_SECONDS=${MAX_OFFSET_SECONDS:-60}
